@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Transformation Visualizer</title>
+  <style>
+    /* ---------- Theme tokens ---------- */
+    :root {
+      --bg: #f3f5f8;
+      --card: #ffffff;
+      --text: #1b1f24;
+      --muted: #67707b;
+      --border: #e2e6eb;
+      --grid: #e7eaee;
+      --axis: #a4adb8;
+      --accent: #2563eb;
+      --accent-fill: rgba(37, 99, 235, 0.14);
+      --original: #98a2ad;
+      --code-bg: #f7f9fb;
+      --error: #c0392b;
+      --btn-bg: #f2f4f7;
+      --btn-hover: #e8ecf1;
+      --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 28px rgba(16, 24, 40, 0.07);
+      color-scheme: light;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111417;
+        --card: #1a1e23;
+        --text: #e6e9ec;
+        --muted: #98a2ad;
+        --border: #2a3037;
+        --grid: #242a30;
+        --axis: #4a545f;
+        --accent: #5b9dff;
+        --accent-fill: rgba(91, 157, 255, 0.16);
+        --original: #6f7a86;
+        --code-bg: #15191d;
+        --error: #ff8a8a;
+        --btn-bg: #22282e;
+        --btn-hover: #2b3239;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 30px rgba(0, 0, 0, 0.35);
+        color-scheme: dark;
+      }
+    }
+
+    /* ---------- Base layout ---------- */
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 28px 16px 48px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page-header {
+      max-width: 1120px;
+      margin: 0 auto 22px;
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: clamp(1.45rem, 2.4vw, 2rem);
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .cards {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    /* Two cards side by side from 760px upward. */
+    @media (min-width: 760px) {
+      .cards {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .card {
+      min-width: 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    /* ---------- Canvas card ---------- */
+    .canvas-wrap {
+      width: 100%;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    #stage {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1 / 1;
+      border-radius: 10px;
+      touch-action: manipulation;
+      cursor: default;
+    }
+
+    #stage.drawing {
+      cursor: crosshair;
+    }
+
+    .canvas-note {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .status {
+      margin: 6px 0 0;
+      min-height: 1.4em;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .status.error {
+      color: var(--error);
+    }
+
+    /* ---------- Controls card ---------- */
+    .controls-card {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .field label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--code-bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.9rem;
+    }
+
+    .btn {
+      appearance: none;
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--btn-bg);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.86rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .btn:hover {
+      background: var(--btn-hover);
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      border-color: transparent;
+      color: #ffffff;
+    }
+
+    .btn.primary:hover {
+      filter: brightness(1.06);
+    }
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .btn:focus-visible,
+    select:focus-visible,
+    input[type="range"]:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .sliders {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .slider-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .slider-head output {
+      color: var(--accent);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.8rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    input[type="range"] {
+      display: block;
+      width: 100%;
+      margin: 3px 0 0;
+      accent-color: var(--accent);
+    }
+
+    .live-title {
+      margin: 0 0 5px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .matrix,
+    .vertices {
+      margin: 0;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--code-bg);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      font-variant-numeric: tabular-nums;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .vertices {
+      max-height: 190px;
+      overflow-y: auto;
+    }
+
+    .hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <h1>Transformation Visualizer</h1>
+    <p class="subtitle">An interactive web-based instructional tool for understanding moving, scaling, and rotating shapes in multimedia.</p>
+  </header>
+
+  <main class="cards">
+    <!-- Left card: coordinate grid and live shape preview -->
+    <section class="card" aria-label="Shape canvas">
+      <div class="canvas-wrap">
+        <canvas id="stage" width="500" height="500"
+                aria-label="Coordinate grid showing the original shape and the transformed shape"></canvas>
+      </div>
+      <p class="canvas-note">Gray dashed = original shape. Blue = transformed shape. Y points up.</p>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <!-- Right card: controls and live math read-outs -->
+    <section class="card controls-card" aria-labelledby="controls-title">
+      <h2 id="controls-title" class="section-title">Controls</h2>
+
+      <div class="two-col">
+        <div class="field">
+          <label for="shape">Shape</label>
+          <select id="shape">
+            <option value="Square" selected>Square</option>
+            <option value="Triangle">Triangle</option>
+            <option value="House">House</option>
+            <option value="Pentagon">Pentagon</option>
+            <option value="Star">Star</option>
+            <option value="Arrow">Arrow</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="order">Order</label>
+          <select id="order">
+            <option value="SRM" selected>Order: Scale, Rotate, Move</option>
+            <option value="MRS">Order: Move, Rotate, Scale</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <button id="reset" class="btn" type="button">Reset</button>
+      </div>
+
+      <div class="sliders">
+        <div>
+          <div class="slider-head">
+            <label for="moveX">Move X</label>
+            <output id="moveXValue" for="moveX">0.0</output>
+          </div>
+          <input id="moveX" type="range" min="-5" max="5" step="0.1" value="0">
+        </div>
+
+        <div>
+          <div class="slider-head">
+            <label for="moveY">Move Y</label>
+            <output id="moveYValue" for="moveY">0.0</output>
+          </div>
+          <input id="moveY" type="range" min="-5" max="5" step="0.1" value="0">
+        </div>
+
+        <div>
+          <div class="slider-head">
+            <label for="scale">Scale</label>
+            <output id="scaleValue" for="scale">1.00x</output>
+          </div>
+          <input id="scale" type="range" min="0.2" max="3" step="0.05" value="1">
+        </div>
+
+        <div>
+          <div class="slider-head">
+            <label for="rotate">Rotate</label>
+            <output id="rotateValue" for="rotate">0&deg;</output>
+          </div>
+          <input id="rotate" type="range" min="-180" max="180" step="1" value="0">
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button id="draw" class="btn" type="button">Draw shape</button>
+        <button id="finish" class="btn primary" type="button">Finish</button>
+        <button id="clear" class="btn" type="button">Clear</button>
+      </div>
+
+      <div>
+        <h3 class="live-title">Combined matrix</h3>
+        <pre id="matrix" class="matrix" aria-label="Combined transformation matrix"></pre>
+      </div>
+
+      <div>
+        <h3 class="live-title">Vertices (before -&gt; after)</h3>
+        <pre id="vertices" class="vertices" aria-label="Vertices before and after the transformation"></pre>
+      </div>
+
+      <p class="hint">Change the order option: the same sliders give a different result, because transformations are not commutative.</p>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      'use strict';
+
+      /* ---------- Geometry constants ---------- */
+      const SIZE = 500;             // Canvas backing size in pixels
+      const HALF = SIZE / 2;        // Origin at the center of the canvas
+      const PX_PER_UNIT = 50;       // 50 canvas pixels = 1 grid unit
+      const GRID_MIN = -5;          // Visible range is -5..+5 on both axes
+      const GRID_MAX = 5;
+
+      /* ---------- Preset vertex lists (grid units) ---------- */
+      const PRESETS = {
+        Square: [
+          [-1, -1], [1, -1], [1, 1], [-1, 1]
+        ],
+        Triangle: [
+          [-1, -1], [1, -1], [0, 1.2]
+        ],
+        House: [
+          [-1, -1], [1, -1], [1, 0.6], [0, 1.5], [-1, 0.6]
+        ],
+        Pentagon: [
+          [0, 1.3], [-1.24, 0.4], [-0.76, -1.05], [0.76, -1.05], [1.24, 0.4]
+        ],
+        Star: [
+          [0, 1.5], [-0.35, 0.49], [-1.43, 0.46], [-0.57, -0.19], [-0.88, -1.21],
+          [0, -0.6], [0.88, -1.21], [0.57, -0.19], [1.43, 0.46], [0.35, 0.49]
+        ],
+        Arrow: [
+          [-1.5, -0.4], [0.3, -0.4], [0.3, -1], [1.5, 0], [0.3, 1], [0.3, 0.4], [-1.5, 0.4]
+        ]
+      };
+
+      /* ---------- Application state ---------- */
+      const state = {
+        shape: 'Square',   // Preset name or "Drawn shape"
+        order: 'SRM',      // SRM = Scale, Rotate, Move | MRS = Move, Rotate, Scale
+        tx: 0,
+        ty: 0,
+        scale: 1,
+        deg: 0,
+        drawing: false,    // True while the user is placing drawing points
+        draft: [],         // Points currently being drawn
+        drawn: null        // Saved custom shape, if one exists
+      };
+
+      /* ---------- DOM references ---------- */
+      const canvas = document.getElementById('stage');
+      const ctx = canvas.getContext('2d');
+
+      const shapeSelect = document.getElementById('shape');
+      const orderSelect = document.getElementById('order');
+      const resetButton = document.getElementById('reset');
+
+      const moveXInput = document.getElementById('moveX');
+      const moveYInput = document.getElementById('moveY');
+      const scaleInput = document.getElementById('scale');
+      const rotateInput = document.getElementById('rotate');
+
+      const moveXValue = document.getElementById('moveXValue');
+      const moveYValue = document.getElementById('moveYValue');
+      const scaleValue = document.getElementById('scaleValue');
+      const rotateValue = document.getElementById('rotateValue');
+
+      const drawButton = document.getElementById('draw');
+      const finishButton = document.getElementById('finish');
+      const clearButton = document.getElementById('clear');
+
+      const matrixEl = document.getElementById('matrix');
+      const verticesEl = document.getElementById('vertices');
+      const statusEl = document.getElementById('status');
+
+      /* ---------- Small helpers ---------- */
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      // Convert grid coordinates to canvas pixel coordinates (Y points up).
+      function toCanvas(x, y) {
+        return [HALF + x * PX_PER_UNIT, HALF - y * PX_PER_UNIT];
+      }
+
+      // Format to 2 decimals while avoiding "-0.00".
+      function fmt2(value) {
+        let rounded = Math.round(value * 100) / 100;
+        if (rounded === 0) rounded = 0;
+        return rounded.toFixed(2);
+      }
+
+      // Format to 1 decimal while avoiding "-0.0".
+      function fmt1(value) {
+        let rounded = Math.round(value * 10) / 10;
+        if (rounded === 0) rounded = 0;
+        return rounded.toFixed(1);
+      }
+
+      function setStatus(message, isError) {
+        statusEl.textContent = message;
+        statusEl.classList.toggle('error', Boolean(isError));
+      }
+
+      // Return the vertex list currently being previewed.
+      function currentPoints() {
+        if (state.shape === 'Drawn shape') {
+          return state.drawn || [];
+        }
+        return PRESETS[state.shape] || [];
+      }
+
+      /* ---------- 3x3 matrix math ---------- */
+      function multiply(a, b) {
+        const out = [
+          [0, 0, 0],
+          [0, 0, 0],
+          [0, 0, 0]
+        ];
+        for (let row = 0; row < 3; row++) {
+          for (let col = 0; col < 3; col++) {
+            out[row][col] =
+              a[row][0] * b[0][col] +
+              a[row][1] * b[1][col] +
+              a[row][2] * b[2][col];
+          }
+        }
+        return out;
+      }
+
+      // Build the combined matrix for the selected order.
+      // SRM: M = T x R x S (scaling happens first to the points).
+      // MRS: M = S x R x T (moving happens first to the points).
+      function computeMatrix() {
+        const radians = (state.deg * Math.PI) / 180;
+        const cos = Math.cos(radians);
+        const sin = Math.sin(radians);
+
+        const T = [
+          [1, 0, state.tx],
+          [0, 1, state.ty],
+          [0, 0, 1]
+        ];
+        const R = [
+          [cos, -sin, 0],
+          [sin, cos, 0],
+          [0, 0, 1]
+        ];
+        const S = [
+          [state.scale, 0, 0],
+          [0, state.scale, 0],
+          [0, 0, 1]
+        ];
+
+        if (state.order === 'SRM') {
+          return multiply(T, multiply(R, S));
+        }
+        return multiply(S, multiply(R, T));
+      }
+
+      // Apply a homogeneous 3x3 matrix to a 2D point.
+      function applyMatrix(matrix, x, y) {
+        return [
+          matrix[0][0] * x + matrix[0][1] * y + matrix[0][2],
+          matrix[1][0] * x + matrix[1][1] * y + matrix[1][2]
+        ];
+      }
+
+      /* ---------- Canvas rendering ---------- */
+      function cssVariable(name, fallback) {
+        const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return value || fallback;
+      }
+
+      // Add a path for an array of grid-unit points.
+      function tracePath(points, close) {
+        ctx.beginPath();
+        points.forEach(function (point, index) {
+          const pixel = toCanvas(point[0], point[1]);
+          if (index === 0) {
+            ctx.moveTo(pixel[0], pixel[1]);
+          } else {
+            ctx.lineTo(pixel[0], pixel[1]);
+          }
+        });
+        if (close) ctx.closePath();
+      }
+
+      function drawCanvas() {
+        const gridColor = cssVariable('--grid', '#e7eaee');
+        const axisColor = cssVariable('--axis', '#a4adb8');
+        const originalColor = cssVariable('--original', '#98a2ad');
+        const accentColor = cssVariable('--accent', '#2563eb');
+        const accentFill = cssVariable('--accent-fill', 'rgba(37,99,235,0.14)');
+
+        ctx.clearRect(0, 0, SIZE, SIZE);
+
+        // Light grid line at every unit, darker axes at zero.
+        for (let i = GRID_MIN; i <= GRID_MAX; i++) {
+          const position = HALF + i * PX_PER_UNIT;
+          const isAxis = i === 0;
+
+          ctx.strokeStyle = isAxis ? axisColor : gridColor;
+          ctx.lineWidth = isAxis ? 1.5 : 1;
+
+          ctx.beginPath();
+          ctx.moveTo(position, 0);
+          ctx.lineTo(position, SIZE);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(0, position);
+          ctx.lineTo(SIZE, position);
+          ctx.stroke();
+        }
+
+        if (state.drawing) {
+          // While drawing, show the in-progress path and its points only.
+          if (state.draft.length >= 2) {
+            ctx.save();
+            ctx.strokeStyle = accentColor;
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            tracePath(state.draft, false);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          ctx.save();
+          ctx.fillStyle = accentColor;
+          state.draft.forEach(function (point) {
+            const pixel = toCanvas(point[0], point[1]);
+            ctx.beginPath();
+            ctx.arc(pixel[0], pixel[1], 4.5, 0, Math.PI * 2);
+            ctx.fill();
+          });
+          ctx.restore();
+          return;
+        }
+
+        const points = currentPoints();
+        if (points.length < 2) return;
+
+        // Original shape as a gray dashed outline.
+        ctx.save();
+        ctx.setLineDash([6, 5]);
+        ctx.strokeStyle = originalColor;
+        ctx.lineWidth = 1.5;
+        ctx.lineJoin = 'round';
+        tracePath(points, true);
+        ctx.stroke();
+        ctx.restore();
+
+        // Transformed shape as a blue outline with a translucent fill.
+        const matrix = computeMatrix();
+        const transformed = points.map(function (point) {
+          return applyMatrix(matrix, point[0], point[1]);
+        });
+
+        ctx.save();
+        tracePath(transformed, true);
+        ctx.fillStyle = accentFill;
+        ctx.fill();
+        ctx.strokeStyle = accentColor;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      /* ---------- Live text read-outs ---------- */
+      function renderMatrix() {
+        const matrix = computeMatrix();
+        const lines = matrix.map(function (row) {
+          return '[ ' + row.map(function (value) {
+            return fmt2(value).padStart(7, ' ');
+          }).join(' ') + ' ]';
+        });
+        matrixEl.textContent = lines.join('\n');
+      }
+
+      function renderVertices() {
+        const points = currentPoints();
+        if (points.length === 0) {
+          verticesEl.textContent = 'No vertices.';
+          return;
+        }
+
+        const matrix = computeMatrix();
+        const lines = points.map(function (point) {
+          const result = applyMatrix(matrix, point[0], point[1]);
+          return '(' + fmt1(point[0]) + ', ' + fmt1(point[1]) + ') -> (' +
+            fmt2(result[0]) + ', ' + fmt2(result[1]) + ')';
+        });
+        verticesEl.textContent = lines.join('\n');
+      }
+
+      function updateSliderLabels() {
+        moveXValue.textContent = state.tx.toFixed(1);
+        moveYValue.textContent = state.ty.toFixed(1);
+        scaleValue.textContent = state.scale.toFixed(2) + 'x';
+        rotateValue.textContent = Math.round(state.deg) + '\u00B0';
+      }
+
+      /* ---------- Main render ---------- */
+      function render() {
+        canvas.classList.toggle('drawing', state.drawing);
+
+        drawCanvas();
+        renderMatrix();
+        renderVertices();
+
+        if (state.drawing) {
+          setStatus(
+            'Drawing: click the grid to add points (' + state.draft.length +
+            ' so far), then press Finish.'
+          );
+        }
+      }
+
+      /* ---------- Control handlers ---------- */
+      shapeSelect.addEventListener('change', function () {
+        state.shape = shapeSelect.value;
+        state.drawing = false;   // Choosing from the dropdown cancels drawing mode
+        state.draft = [];
+        setStatus('');
+        render();
+      });
+
+      orderSelect.addEventListener('change', function () {
+        state.order = orderSelect.value;
+        render();
+      });
+
+      moveXInput.addEventListener('input', function () {
+        state.tx = parseFloat(moveXInput.value);
+        updateSliderLabels();
+        render();
+      });
+
+      moveYInput.addEventListener('input', function () {
+        state.ty = parseFloat(moveYInput.value);
+        updateSliderLabels();
+        render();
+      });
+
+      scaleInput.addEventListener('input', function () {
+        state.scale = parseFloat(scaleInput.value);
+        updateSliderLabels();
+        render();
+      });
+
+      rotateInput.addEventListener('input', function () {
+        state.deg = parseFloat(rotateInput.value);
+        updateSliderLabels();
+        render();
+      });
+
+      resetButton.addEventListener('click', function () {
+        state.tx = 0;
+        state.ty = 0;
+        state.scale = 1;
+        state.deg = 0;
+
+        moveXInput.value = '0';
+        moveYInput.value = '0';
+        scaleInput.value = '1';
+        rotateInput.value = '0';
+
+        updateSliderLabels();
+        render();
+      });
+
+      /* ---------- Draw-your-own-shape feature ---------- */
+      drawButton.addEventListener('click', function () {
+        state.drawing = true;
+        state.draft = [];
+        render();
+      });
+
+      clearButton.addEventListener('click', function () {
+        state.drawing = true;
+        state.draft = [];
+        render();
+      });
+
+      finishButton.addEventListener('click', function () {
+        if (!state.drawing) return;
+
+        if (state.draft.length < 3) {
+          setStatus('Add at least 3 points first.', true);
+          return;
+        }
+
+        // Save a copy and expose it as "Drawn shape" in the dropdown.
+        state.drawn = state.draft.slice();
+        state.shape = 'Drawn shape';
+        state.drawing = false;
+        state.draft = [];
+
+        let drawnOption = shapeSelect.querySelector('option[value="Drawn shape"]');
+        if (!drawnOption) {
+          drawnOption = document.createElement('option');
+          drawnOption.value = 'Drawn shape';
+          drawnOption.textContent = 'Drawn shape';
+          shapeSelect.appendChild(drawnOption);
+        }
+        shapeSelect.value = 'Drawn shape';
+
+        setStatus('Drawn shape saved. Use the sliders to transform it.');
+        render();
+      });
+
+      // Convert a click on the scaled canvas into grid units, snap to 0.5,
+      // and keep the point inside the visible -5..+5 range.
+      canvas.addEventListener('click', function (event) {
+        if (!state.drawing) return;
+
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+
+        const canvasX = (event.clientX - rect.left) * (SIZE / rect.width);
+        const canvasY = (event.clientY - rect.top) * (SIZE / rect.height);
+
+        let gridX = (canvasX - HALF) / PX_PER_UNIT;
+        let gridY = (HALF - canvasY) / PX_PER_UNIT;
+
+        gridX = clamp(Math.round(gridX * 2) / 2, GRID_MIN, GRID_MAX);
+        gridY = clamp(Math.round(gridY * 2) / 2, GRID_MIN, GRID_MAX);
+
+        state.draft.push([gridX, gridY]);
+        render();
+      });
+
+      /* ---------- Theme changes ---------- */
+      // The canvas colors come from CSS variables, so redraw when the system
+      // switches between light and dark mode.
+      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      if (typeof darkModeQuery.addEventListener === 'function') {
+        darkModeQuery.addEventListener('change', drawCanvas);
+      } else if (typeof darkModeQuery.addListener === 'function') {
+        darkModeQuery.addListener(drawCanvas);
+      }
+
+      /* ---------- Initial render ---------- */
+      shapeSelect.value = state.shape;
+      orderSelect.value = state.order;
+      updateSliderLabels();
+      render();
+    })();
+  </script>
+</body>
+</html>
