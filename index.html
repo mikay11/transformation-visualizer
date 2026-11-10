@@ -294,6 +294,160 @@
       color: var(--muted);
       font-size: 0.78rem;
     }
+
+    /* ---------- ADDED FEATURE: shape identification popup ---------- */
+    .live-detect {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(12, 16, 21, 0.55);
+      opacity: 0;
+      transition: opacity 0.16s ease;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+    }
+
+    .modal-overlay[hidden] {
+      display: none;
+    }
+
+    .modal {
+      width: min(460px, 100%);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+      transform: scale(0.9) translateY(12px);
+      transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .modal-overlay.open .modal {
+      transform: none;
+    }
+
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 0 0 14px;
+    }
+
+    .shape-badge {
+      padding: 4px 11px;
+      border-radius: 999px;
+      background: var(--accent-fill);
+      color: var(--accent);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .modal-body {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    #shapeModalCanvas {
+      flex: 0 0 auto;
+      width: 132px;
+      height: 132px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--code-bg);
+    }
+
+    .modal-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    #shapeModalTitle {
+      margin: 0 0 6px;
+      font-size: 1.4rem;
+      line-height: 1.15;
+      letter-spacing: -0.01em;
+    }
+
+    #shapeModalDesc {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .match-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .match-row {
+      display: grid;
+      grid-template-columns: 84px 40px 1fr;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.78rem;
+    }
+
+    .match-name {
+      font-weight: 600;
+    }
+
+    .match-pct {
+      color: var(--accent);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+
+    .match-bar {
+      height: 7px;
+      border-radius: 999px;
+      background: var(--btn-bg);
+      overflow: hidden;
+    }
+
+    .match-bar-fill {
+      display: block;
+      width: 0%;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--accent);
+      transition: width 0.4s ease;
+    }
+
+    #shapeModalStats {
+      margin: 14px 0 0;
+    }
+
+    @media (max-width: 520px) {
+      .modal-body {
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .modal-text {
+        text-align: center;
+      }
+
+      .match-list {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body>
@@ -311,6 +465,7 @@
       </div>
       <p class="canvas-note">Gray dashed = original shape. Blue = transformed shape. Y points up.</p>
       <p id="status" class="status" role="status" aria-live="polite"></p>
+      <p id="liveDetect" class="status live-detect" aria-live="polite"></p>
     </section>
 
     <!-- Right card: controls and live math read-outs -->
@@ -396,6 +551,26 @@
       <p class="hint">Change the order option: the same sliders give a different result, because transformations are not commutative.</p>
     </section>
   </main>
+
+  <!-- ADDED FEATURE: shape identification popup -->
+  <div id="shapeModal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true"
+         aria-labelledby="shapeModalTitle" aria-describedby="shapeModalDesc">
+      <div class="modal-head">
+        <span class="shape-badge">Shape identified</span>
+        <button id="shapeModalClose" class="btn" type="button">Close</button>
+      </div>
+      <div class="modal-body">
+        <canvas id="shapeModalCanvas" width="132" height="132" aria-hidden="true"></canvas>
+        <div class="modal-text">
+          <h2 id="shapeModalTitle"></h2>
+          <p id="shapeModalDesc"></p>
+          <div id="shapeModalMatches" class="match-list" aria-label="Similarity to the preset shapes"></div>
+        </div>
+      </div>
+      <pre id="shapeModalStats" class="matrix" aria-label="Measured properties of the drawn shape"></pre>
+    </div>
+  </div>
 
   <script>
     (function () {
@@ -583,6 +758,49 @@
         if (close) ctx.closePath();
       }
 
+      // ADDED FEATURE: numbers along the x and y axes.
+      function drawAxisLabels() {
+        const labelColor = cssVariable('--muted', '#67707b');
+
+        ctx.save();
+        ctx.fillStyle = labelColor;
+        ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+
+        // X-axis numbers sit just below the horizontal axis.
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let i = GRID_MIN; i <= GRID_MAX; i++) {
+          if (i === 0) continue;
+          const position = HALF + i * PX_PER_UNIT;
+          ctx.fillText(String(i), clamp(position, 16, SIZE - 16), HALF + 6);
+        }
+
+        // Y-axis numbers sit just left of the vertical axis (Y points up).
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for (let i = GRID_MIN; i <= GRID_MAX; i++) {
+          if (i === 0) continue;
+          const position = HALF - i * PX_PER_UNIT;
+          ctx.fillText(String(i), HALF - 7, clamp(position, 10, SIZE - 10));
+        }
+
+        // A single 0 at the origin, tucked below-left of the crossing.
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+        ctx.fillText('0', HALF - 6, HALF + 6);
+
+        // Axis names at the ends so X and Y are unmistakable.
+        ctx.font = 'italic 600 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('X', SIZE - 10, HALF - 6);
+
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText('Y', HALF + 8, 8);
+        ctx.restore();
+      }
+
       function drawCanvas() {
         const gridColor = cssVariable('--grid', '#e7eaee');
         const axisColor = cssVariable('--axis', '#a4adb8');
@@ -610,6 +828,8 @@
           ctx.lineTo(SIZE, position);
           ctx.stroke();
         }
+
+        drawAxisLabels();
 
         if (state.drawing) {
           // While drawing, show the in-progress path and its points only.
@@ -807,6 +1027,9 @@
 
         setStatus('Drawn shape saved. Use the sliders to transform it.');
         render();
+
+        // ADDED FEATURE: identify the drawn shape and pop up the result.
+        announceShape(state.drawn);
       });
 
       // Convert a click on the scaled canvas into grid units, snap to 0.5,
@@ -839,6 +1062,613 @@
       } else if (typeof darkModeQuery.addListener === 'function') {
         darkModeQuery.addListener(drawCanvas);
       }
+
+      /* ============================================================
+         ADDED FEATURE: automatic shape identification + popup
+         ============================================================
+         When the user finishes drawing, the outline is analyzed (vertex
+         count, side lengths, interior angles, convexity, self-crossing)
+         and compared against the preset shapes. The result pops up
+         immediately in a modal dialog. While drawing, a live hint
+         under the canvas names the shape recognized so far. */
+
+      const modalOverlay = document.getElementById('shapeModal');
+      const modalCloseButton = document.getElementById('shapeModalClose');
+      const modalCanvas = document.getElementById('shapeModalCanvas');
+      const modalCtx = modalCanvas.getContext('2d');
+      const modalTitleEl = document.getElementById('shapeModalTitle');
+      const modalDescEl = document.getElementById('shapeModalDesc');
+      const modalMatchesEl = document.getElementById('shapeModalMatches');
+      const modalStatsEl = document.getElementById('shapeModalStats');
+      const liveDetectEl = document.getElementById('liveDetect');
+
+      const MATCH_SAMPLES = 96;
+
+      const POLYGON_NAMES = {
+        3: 'Triangle', 4: 'Quadrilateral', 5: 'Pentagon', 6: 'Hexagon',
+        7: 'Heptagon', 8: 'Octagon', 9: 'Nonagon', 10: 'Decagon',
+        11: 'Hendecagon', 12: 'Dodecagon'
+      };
+
+      function polygonFamilyName(count) {
+        return POLYGON_NAMES[count] || count + '-gon';
+      }
+
+      // Shoelace signed area (positive = counter-clockwise).
+      function signedAreaOf(points) {
+        let area = 0;
+        for (let i = 0; i < points.length; i++) {
+          const a = points[i];
+          const b = points[(i + 1) % points.length];
+          area += a[0] * b[1] - b[0] * a[1];
+        }
+        return area / 2;
+      }
+
+      function polygonCentroidOf(points) {
+        let x = 0;
+        let y = 0;
+        points.forEach(function (p) {
+          x += p[0];
+          y += p[1];
+        });
+        return [x / points.length, y / points.length];
+      }
+
+      function ensureCounterClockwise(points) {
+        return signedAreaOf(points) < 0 ? points.slice().reverse() : points.slice();
+      }
+
+      function sideLengthsOf(points) {
+        const sides = [];
+        for (let i = 0; i < points.length; i++) {
+          const a = points[i];
+          const b = points[(i + 1) % points.length];
+          sides.push(Math.hypot(b[0] - a[0], b[1] - a[1]));
+        }
+        return sides;
+      }
+
+      // Interior angles in degrees, assuming counter-clockwise order.
+      function interiorAnglesOf(points) {
+        const n = points.length;
+        const angles = [];
+        for (let i = 0; i < n; i++) {
+          const prev = points[(i + n - 1) % n];
+          const curr = points[i];
+          const next = points[(i + 1) % n];
+          const v1x = prev[0] - curr[0];
+          const v1y = prev[1] - curr[1];
+          const v2x = next[0] - curr[0];
+          const v2y = next[1] - curr[1];
+          const dot = v1x * v2x + v1y * v2y;
+          const m1 = Math.hypot(v1x, v1y);
+          const m2 = Math.hypot(v2x, v2y);
+          let angle = Math.acos(clamp(dot / (m1 * m2), -1, 1)) * 180 / Math.PI;
+          if (v1x * v2y - v1y * v2x > 0) angle = 360 - angle; // reflex vertex
+          angles.push(angle);
+        }
+        return angles;
+      }
+
+      function segmentsIntersect(p1, p2, p3, p4) {
+        function orientation(a, b, c) {
+          return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+        }
+        const d1 = orientation(p3, p4, p1);
+        const d2 = orientation(p3, p4, p2);
+        const d3 = orientation(p1, p2, p3);
+        const d4 = orientation(p1, p2, p4);
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+               ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+      }
+
+      function isSelfIntersecting(points) {
+        const n = points.length;
+        for (let i = 0; i < n; i++) {
+          for (let j = i + 2; j < n; j++) {
+            if (i === 0 && j === n - 1) continue; // first and last edges share a vertex
+            const a1 = points[i];
+            const a2 = points[(i + 1) % n];
+            const b1 = points[j];
+            const b2 = points[(j + 1) % n];
+            if (segmentsIntersect(a1, a2, b1, b2)) return true;
+          }
+        }
+        return false;
+      }
+
+      function allCollinear(points) {
+        const a = points[0];
+        let b = null;
+        for (let i = 1; i < points.length; i++) {
+          if (Math.hypot(points[i][0] - a[0], points[i][1] - a[1]) > 1e-6) {
+            b = points[i];
+            break;
+          }
+        }
+        if (!b) return true;
+        const dx = b[0] - a[0];
+        const dy = b[1] - a[1];
+        return points.every(function (p) {
+          return Math.abs((p[0] - a[0]) * dy - (p[1] - a[1]) * dx) <= 1e-6;
+        });
+      }
+
+      // Evenly spaced samples along the polygon outline.
+      function resamplePolygon(points, count) {
+        const n = points.length;
+        const dists = [];
+        let total = 0;
+        for (let i = 0; i < n; i++) {
+          const a = points[i];
+          const b = points[(i + 1) % n];
+          const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          dists.push(d);
+          total += d;
+        }
+        if (total === 0) return null;
+        const step = total / count;
+        const out = [];
+        let edge = 0;
+        let consumed = 0;
+        for (let s = 0; s < count; s++) {
+          const target = s * step;
+          while (edge < n && target > consumed + dists[edge] + 1e-9) {
+            consumed += dists[edge];
+            edge++;
+          }
+          const e = edge % n;
+          const d = dists[e];
+          const t = d > 0 ? clamp((target - consumed) / d, 0, 1) : 0;
+          const a = points[e];
+          const b = points[(e + 1) % n];
+          out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+        }
+        return out;
+      }
+
+      // Center on the centroid and scale so the RMS radius is 1.
+      function normalizePolygon(points) {
+        const c = polygonCentroidOf(points);
+        let sumSq = 0;
+        const centered = points.map(function (p) {
+          const dx = p[0] - c[0];
+          const dy = p[1] - c[1];
+          sumSq += dx * dx + dy * dy;
+          return [dx, dy];
+        });
+        const scale = Math.sqrt(sumSq / points.length) || 1;
+        return centered.map(function (p) {
+          return [p[0] / scale, p[1] / scale];
+        });
+      }
+
+      // Mean point distance after the best possible rotation (Procrustes).
+      function procrustesDistance(a, b) {
+        let zx = 0;
+        let zy = 0;
+        let za = 0;
+        let zb = 0;
+        for (let k = 0; k < a.length; k++) {
+          zx += a[k][0] * b[k][0] + a[k][1] * b[k][1];
+          zy += a[k][1] * b[k][0] - a[k][0] * b[k][1];
+          za += a[k][0] * a[k][0] + a[k][1] * a[k][1];
+          zb += b[k][0] * b[k][0] + b[k][1] * b[k][1];
+        }
+        const residual = za + zb - 2 * Math.hypot(zx, zy);
+        return Math.sqrt(Math.max(0, residual) / a.length);
+      }
+
+      // Compare two sampled outlines, trying every starting point.
+      function bestShiftDistance(a, b) {
+        const shifted = b.slice();
+        let best = Infinity;
+        for (let shift = 0; shift < a.length; shift++) {
+          const d = procrustesDistance(a, shifted);
+          if (d < best) best = d;
+          shifted.push(shifted.shift());
+        }
+        return best;
+      }
+
+      // Similarity (0-100%) against every preset shape. Rotation, size,
+      // position, starting vertex and mirror direction do not matter.
+      function matchAgainstPresets(points) {
+        const prepared = normalizePolygon(resamplePolygon(ensureCounterClockwise(points), MATCH_SAMPLES));
+        const mirrored = prepared.map(function (p) {
+          return [-p[0], p[1]];
+        }).reverse();
+        return Object.keys(PRESETS).map(function (name) {
+          const preset = normalizePolygon(resamplePolygon(ensureCounterClockwise(PRESETS[name]), MATCH_SAMPLES));
+          const d = Math.min(bestShiftDistance(prepared, preset), bestShiftDistance(mirrored, preset));
+          return { name: name, percent: Math.round(Math.max(0, 1 - d * 1.35) * 100) };
+        }).sort(function (x, y) {
+          return y.percent - x.percent;
+        });
+      }
+
+      // Detect star outlines: vertex radii alternate far/near around the centroid.
+      function looksLikeStar(points) {
+        const n = points.length;
+        if (n < 6 || n % 2 !== 0) return 0;
+        const c = polygonCentroidOf(points);
+        const radii = points.map(function (p) {
+          return Math.hypot(p[0] - c[0], p[1] - c[1]);
+        });
+        const groupA = radii.filter(function (_, i) { return i % 2 === 0; });
+        const groupB = radii.filter(function (_, i) { return i % 2 === 1; });
+        function mean(arr) {
+          return arr.reduce(function (s, v) { return s + v; }, 0) / arr.length;
+        }
+        const mA = mean(groupA);
+        const mB = mean(groupB);
+        const small = Math.min(mA, mB);
+        if (small <= 0) return 0;
+        if (Math.max(mA, mB) / small < 1.5) return 0;
+        const spreadA = Math.max.apply(null, groupA) - Math.min.apply(null, groupA);
+        const spreadB = Math.max.apply(null, groupB) - Math.min.apply(null, groupB);
+        if (spreadA > 0.45 * mA || spreadB > 0.45 * mB) return 0;
+        return n / 2;
+      }
+
+      function withinTolerance(values, tolerance) {
+        return (Math.max.apply(null, values) - Math.min.apply(null, values)) <= tolerance;
+      }
+
+      function relativelyEqual(values, tolerance) {
+        const mean = values.reduce(function (s, v) { return s + v; }, 0) / values.length;
+        return values.every(function (v) {
+          return Math.abs(v - mean) <= tolerance * mean;
+        });
+      }
+
+      function classifyDrawnShape(rawPoints) {
+        // Work on a cleaned copy: drop consecutive duplicate clicks.
+        const cleaned = [];
+        rawPoints.forEach(function (p) {
+          const last = cleaned[cleaned.length - 1];
+          if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 1e-6) {
+            cleaned.push([p[0], p[1]]);
+          }
+        });
+        while (cleaned.length > 1) {
+          const first = cleaned[0];
+          const last = cleaned[cleaned.length - 1];
+          if (Math.hypot(first[0] - last[0], first[1] - last[1]) > 1e-6) break;
+          cleaned.pop();
+        }
+
+        const result = { title: 'Unknown shape', description: '', stats: [], matches: [] };
+
+        if (cleaned.length === 1) {
+          result.title = 'Point';
+          result.description = 'All clicks landed on the same grid point, so no shape was formed.';
+          return result;
+        }
+
+        const area = Math.abs(signedAreaOf(cleaned));
+        const selfCrossingEarly = isSelfIntersecting(cleaned);
+        if (cleaned.length === 2 || allCollinear(cleaned) || (!selfCrossingEarly && area < 0.02)) {
+          result.title = 'Line';
+          result.description = 'The points are collinear, so they form a straight line rather than a shape.';
+          return result;
+        }
+
+        const points = ensureCounterClockwise(cleaned);
+        const n = points.length;
+        const sides = sideLengthsOf(points);
+        const angles = interiorAnglesOf(points);
+        const selfCrossing = isSelfIntersecting(points);
+        const convex = angles.every(function (a) { return a < 180.5; });
+        const perimeter = sides.reduce(function (s, v) { return s + v; }, 0);
+        const rightCount = angles.filter(function (a) {
+          return Math.abs(a - 90) <= 4;
+        }).length;
+
+        result.matches = matchAgainstPresets(points);
+
+        let name = polygonFamilyName(n);
+        let description = 'A convex polygon with ' + n + ' sides.';
+
+        if (selfCrossing) {
+          if (n === 4) {
+            name = 'Bowtie (Crossed Quadrilateral)';
+            description = 'The outline crosses itself, forming a bowtie shape.';
+          } else if (n === 5) {
+            name = 'Star (Pentagram)';
+            description = 'A 5-point star drawn as one self-crossing outline.';
+          } else {
+            name = 'Star Polygon';
+            description = 'A self-crossing polygon with ' + n + ' vertices.';
+          }
+        } else if (n === 3) {
+          const equalSides = relativelyEqual(sides, 0.06);
+          const hasRight = angles.some(function (a) { return Math.abs(a - 90) <= 4; });
+          const isosceles = equalSides || sides.some(function (s, i) {
+            const t = sides[(i + 1) % 3];
+            return Math.abs(s - t) <= 0.05 * Math.max(s, t);
+          });
+          const largest = Math.max.apply(null, angles);
+          if (equalSides) {
+            name = 'Equilateral Triangle';
+            description = 'A triangle with 3 equal sides and three 60\u00B0 angles.';
+          } else if (hasRight && isosceles) {
+            name = 'Isosceles Right Triangle';
+            description = 'A triangle with a 90\u00B0 angle and two equal sides (45\u00B0-45\u00B0-90\u00B0).';
+          } else if (hasRight) {
+            name = 'Right Triangle';
+            description = 'A triangle with one 90\u00B0 angle.';
+          } else if (isosceles) {
+            name = 'Isosceles Triangle';
+            description = 'A triangle with two equal sides and two equal angles.';
+          } else {
+            name = 'Scalene Triangle';
+            description = 'A triangle with 3 different side lengths.';
+          }
+          if (!hasRight) {
+            description += (largest > 91) ? ' It is an obtuse triangle.' : ' It is an acute triangle.';
+          }
+        } else if (n === 4) {
+          const edges = points.map(function (p, i) {
+            const q = points[(i + 1) % 4];
+            return [q[0] - p[0], q[1] - p[1]];
+          });
+          const parallel = function (e1, e2) {
+            const cross = e1[0] * e2[1] - e1[1] * e2[0];
+            const mag = Math.hypot(e1[0], e1[1]) * Math.hypot(e2[0], e2[1]);
+            return mag > 0 && Math.abs(cross) / mag <= 0.09;
+          };
+          const pair02 = parallel(edges[0], edges[2]);
+          const pair13 = parallel(edges[1], edges[3]);
+          const equalSides = relativelyEqual(sides, 0.08);
+          const legsEqual = Math.abs(sides[1] - sides[3]) <= 0.08 * Math.max(sides[1], sides[3]);
+
+          if (!convex) {
+            name = 'Concave Quadrilateral';
+            description = 'A four-sided shape with one inward (reflex) angle, like an arrowhead.';
+          } else if (rightCount === 4 && equalSides) {
+            name = 'Square';
+            description = 'A quadrilateral with 4 equal sides and 4 right angles.';
+          } else if (rightCount === 4) {
+            name = 'Rectangle';
+            description = 'A quadrilateral with 4 right angles and opposite sides equal.';
+          } else if (pair02 && pair13) {
+            name = equalSides ? 'Rhombus' : 'Parallelogram';
+            description = equalSides
+              ? 'A quadrilateral with 4 equal sides and opposite sides parallel.'
+              : 'A quadrilateral with two pairs of parallel opposite sides.';
+          } else if (pair02 || pair13) {
+            name = legsEqual ? 'Isosceles Trapezoid' : 'Trapezoid';
+            description = legsEqual
+              ? 'A trapezoid with one pair of parallel sides and equal legs.'
+              : 'A quadrilateral with exactly one pair of parallel sides.';
+          } else {
+            const s0s1 = Math.abs(sides[0] - sides[1]) <= 0.08 * Math.max(sides[0], sides[1]);
+            const s1s2 = Math.abs(sides[1] - sides[2]) <= 0.08 * Math.max(sides[1], sides[2]);
+            const s2s3 = Math.abs(sides[2] - sides[3]) <= 0.08 * Math.max(sides[2], sides[3]);
+            const s3s0 = Math.abs(sides[3] - sides[0]) <= 0.08 * Math.max(sides[3], sides[0]);
+            if ((s0s1 && s2s3 && !s1s2) || (s1s2 && s3s0 && !s0s1)) {
+              name = 'Kite';
+              description = 'A quadrilateral with two pairs of adjacent equal sides.';
+            } else {
+              name = 'Quadrilateral';
+              description = 'A four-sided polygon (irregular quadrilateral).';
+            }
+          }
+        } else {
+          const starPoints = looksLikeStar(points);
+          if (starPoints) {
+            name = starPoints + '-Pointed Star';
+            description = 'A star outline with ' + starPoints + ' outer points and ' + starPoints + ' inner corners.';
+          } else if (!convex) {
+            name = 'Concave ' + polygonFamilyName(n);
+            description = 'A ' + polygonFamilyName(n).toLowerCase() + ' with at least one inward (reflex) angle.';
+          } else {
+            const equalSides = relativelyEqual(sides, 0.08);
+            const equalAngles = withinTolerance(angles, 8);
+            if (equalSides && equalAngles) {
+              name = 'Regular ' + polygonFamilyName(n);
+              description = 'All ' + n + ' sides and all ' + n + ' angles are equal.';
+            } else {
+              name = polygonFamilyName(n);
+              description = 'A convex polygon with ' + n + ' sides.';
+            }
+            const c = polygonCentroidOf(points);
+            const radii = points.map(function (p) {
+              return Math.hypot(p[0] - c[0], p[1] - c[1]);
+            });
+            const meanR = radii.reduce(function (s, v) { return s + v; }, 0) / radii.length;
+            if (n >= 8 && withinTolerance(radii, 0.1 * meanR)) {
+              description += ' Its vertices are nearly the same distance from the center, so it approximates a circle.';
+            }
+          }
+        }
+
+        // A strong match to a distinctive preset (House, Arrow, Star) is a
+        // clearer label than the generic polygon name.
+        const best = result.matches[0];
+        const genericGeo = name === polygonFamilyName(n) ||
+          name.indexOf('Quadrilateral') !== -1 ||
+          name.indexOf('Concave ') === 0;
+        if (best && best.percent >= 85 && genericGeo &&
+            (best.name === 'House' || best.name === 'Arrow' || best.name === 'Star')) {
+          name = best.name;
+        }
+        if (best && best.percent >= 60) {
+          description += ' Closest preset: ' + best.name + ' (' + best.percent + '% similar).';
+        }
+
+        const minSide = Math.min.apply(null, sides);
+        const maxSide = Math.max.apply(null, sides);
+        const minAngle = Math.min.apply(null, angles);
+        const maxAngle = Math.max.apply(null, angles);
+
+        result.title = name;
+        result.description = description;
+        result.stats = [
+          'Vertices:  ' + n,
+          'Sides:     ' + n + '   (length ' + fmt2(minSide) + ' - ' + fmt2(maxSide) + ' units)',
+          'Angles:    ' + fmt1(minAngle) + '\u00B0 - ' + fmt1(maxAngle) + '\u00B0' +
+            (rightCount > 0 ? '   (' + rightCount + ' right angle' + (rightCount > 1 ? 's' : '') + ')' : ''),
+          'Perimeter: ' + fmt2(perimeter) + ' units',
+          'Area:      ' + fmt2(area) + ' square units',
+          'Outline:   ' + (convex ? 'convex' : 'concave') + (selfCrossing ? ', self-intersecting' : '')
+        ];
+
+        return result;
+      }
+
+      // Draw the recognized outline in the small preview canvas.
+      function drawShapeIcon(points) {
+        const size = modalCanvas.width;
+        const pad = 16;
+        modalCtx.clearRect(0, 0, size, size);
+        if (!points || points.length < 2) return;
+
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        points.forEach(function (p) {
+          minX = Math.min(minX, p[0]);
+          minY = Math.min(minY, p[1]);
+          maxX = Math.max(maxX, p[0]);
+          maxY = Math.max(maxY, p[1]);
+        });
+
+        const width = Math.max(maxX - minX, 1e-6);
+        const height = Math.max(maxY - minY, 1e-6);
+        const scale = Math.min((size - 2 * pad) / width, (size - 2 * pad) / height);
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+
+        const mapped = points.map(function (p) {
+          return [size / 2 + (p[0] - cx) * scale, size / 2 - (p[1] - cy) * scale];
+        });
+
+        const accent = cssVariable('--accent', '#2563eb');
+        const accentFill = cssVariable('--accent-fill', 'rgba(37,99,235,0.14)');
+
+        modalCtx.save();
+        modalCtx.beginPath();
+        mapped.forEach(function (p, i) {
+          if (i === 0) {
+            modalCtx.moveTo(p[0], p[1]);
+          } else {
+            modalCtx.lineTo(p[0], p[1]);
+          }
+        });
+        modalCtx.closePath();
+        modalCtx.fillStyle = accentFill;
+        modalCtx.fill();
+        modalCtx.strokeStyle = accent;
+        modalCtx.lineWidth = 2;
+        modalCtx.lineJoin = 'round';
+        modalCtx.stroke();
+
+        modalCtx.fillStyle = accent;
+        mapped.forEach(function (p) {
+          modalCtx.beginPath();
+          modalCtx.arc(p[0], p[1], 3.5, 0, Math.PI * 2);
+          modalCtx.fill();
+        });
+        modalCtx.restore();
+      }
+
+      function openShapeModal() {
+        modalOverlay.hidden = false;
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            modalOverlay.classList.add('open');
+          });
+        });
+        modalCloseButton.focus();
+      }
+
+      function closeShapeModal() {
+        modalOverlay.classList.remove('open');
+        window.setTimeout(function () {
+          modalOverlay.hidden = true;
+        }, 200);
+        finishButton.focus();
+      }
+
+      function showShapeModal(result, points) {
+        modalTitleEl.textContent = result.title;
+        modalDescEl.textContent = result.description;
+        modalStatsEl.textContent = result.stats.join('\n');
+
+        modalMatchesEl.textContent = '';
+        result.matches.filter(function (m) {
+          return m.percent >= 35;
+        }).slice(0, 3).forEach(function (match) {
+          const row = document.createElement('div');
+          row.className = 'match-row';
+
+          const name = document.createElement('span');
+          name.className = 'match-name';
+          name.textContent = match.name;
+
+          const percent = document.createElement('span');
+          percent.className = 'match-pct';
+          percent.textContent = match.percent + '%';
+
+          const bar = document.createElement('div');
+          bar.className = 'match-bar';
+          const fill = document.createElement('div');
+          fill.className = 'match-bar-fill';
+          bar.appendChild(fill);
+
+          row.appendChild(name);
+          row.appendChild(percent);
+          row.appendChild(bar);
+          modalMatchesEl.appendChild(row);
+
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              fill.style.width = match.percent + '%';
+            });
+          });
+        });
+
+        drawShapeIcon(points);
+        openShapeModal();
+      }
+
+      // Called from the Finish handler: name the shape and pop up the result.
+      function announceShape(points) {
+        if (!points || points.length < 3) return;
+        const result = classifyDrawnShape(points);
+        const drawnOption = shapeSelect.querySelector('option[value="Drawn shape"]');
+        if (drawnOption) drawnOption.textContent = 'Drawn shape (' + result.title + ')';
+        liveDetectEl.textContent = '';
+        showShapeModal(result, points);
+      }
+
+      // Live naming of the outline while the user is still clicking points.
+      function refreshLiveDetect() {
+        if (!state.drawing || state.draft.length < 3) {
+          liveDetectEl.textContent = '';
+          return;
+        }
+        liveDetectEl.textContent = 'Recognized so far: ' + classifyDrawnShape(state.draft).title;
+      }
+
+      modalCloseButton.addEventListener('click', closeShapeModal);
+      modalOverlay.addEventListener('click', function (event) {
+        if (event.target === modalOverlay) closeShapeModal();
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && !modalOverlay.hidden) closeShapeModal();
+      });
+
+      canvas.addEventListener('click', refreshLiveDetect);
+      drawButton.addEventListener('click', refreshLiveDetect);
+      clearButton.addEventListener('click', refreshLiveDetect);
+      shapeSelect.addEventListener('change', function () {
+        liveDetectEl.textContent = '';
+      });
 
       /* ---------- Initial render ---------- */
       shapeSelect.value = state.shape;
